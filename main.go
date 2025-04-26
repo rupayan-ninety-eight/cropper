@@ -2,99 +2,36 @@ package main
 
 import (
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
 	"log"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
-	"strings"
 )
 
 func main() {
-	if len(os.Args) != 3 {
-		log.Fatalf("Usage: %s <folder_path> <split_width>\n", os.Args[0])
+	if len(os.Args) < 2 {
+		log.Fatalf("Usage: %s <command> [args...]\nCommands:\n  crop <folder> <split_width>\n  combine <folder> <direction>", os.Args[0])
 	}
 
-	folderPath := os.Args[1]
-	splitWidth, err := strconv.Atoi(os.Args[2])
-	if err != nil || splitWidth <= 0 {
-		log.Fatalf("Invalid split width: %s\n", os.Args[2])
-	}
+	command := os.Args[1]
 
-	outputDir := filepath.Join(folderPath, "output")
-	err = os.MkdirAll(outputDir, os.ModePerm)
-	if err != nil {
-		log.Fatalf("Failed to create output directory: %v", err)
-	}
-
-	err = filepath.Walk(folderPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	switch command {
+	case "crop":
+		if len(os.Args) != 4 {
+			log.Fatalf("Usage: %s crop <folder_path> <split_width>", os.Args[0])
 		}
-		if info.IsDir() || strings.Contains(path, "/output/") {
-			return nil
+		folder := os.Args[2]
+		width := os.Args[3]
+		RunCropper(folder, width)
+
+	case "combine":
+		if len(os.Args) != 4 {
+			log.Fatalf("Usage: %s combine <folder_path> <left|right>", os.Args[0])
 		}
+		folder := os.Args[2]
+		direction := os.Args[3]
+		RunCombiner(folder, direction)
 
-		ext := strings.ToLower(filepath.Ext(info.Name()))
-		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
-			return nil
-		}
-
-		fmt.Printf("Processing: %s\n", path)
-		err = processImage(path, splitWidth, outputDir)
-		if err != nil {
-			fmt.Printf("  Skipped (%v)\n", err)
-		}
-		return nil
-	})
-
-	if err != nil {
-		log.Fatalf("Error walking folder: %v\n", err)
+	default:
+		fmt.Printf("Unknown command: %s\n", command)
+		os.Exit(1)
 	}
-}
-
-func processImage(imagePath string, splitWidth int, outputDir string) error {
-	file, err := os.Open(imagePath)
-	if err != nil {
-		return fmt.Errorf("failed to open image: %v", err)
-	}
-	defer file.Close()
-
-	img, _, err := image.DecodeConfig(file)
-	if err != nil {
-		return fmt.Errorf("failed to decode image config: %v", err)
-	}
-
-	width := img.Width
-	height := img.Height
-
-	if splitWidth*2+2 > width {
-		return fmt.Errorf("image width too small (%d)", width)
-	}
-
-	baseName := strings.TrimSuffix(filepath.Base(imagePath), filepath.Ext(imagePath))
-	leftOutput := filepath.Join(outputDir, baseName+"_right.png")
-	rightOutput := filepath.Join(outputDir, baseName+"_left.png")
-
-	// Crop left
-	leftCmd := exec.Command("magick", imagePath, "-crop",
-		fmt.Sprintf("%dx%d+0+0", splitWidth, height),
-		"+repage", leftOutput)
-
-	// Crop right
-	rightCmd := exec.Command("magick", imagePath, "-crop",
-		fmt.Sprintf("%dx%d+%d+0", splitWidth, height, width-splitWidth),
-		"+repage", rightOutput)
-
-	if err := leftCmd.Run(); err != nil {
-		return fmt.Errorf("magick crop left failed: %v", err)
-	}
-	if err := rightCmd.Run(); err != nil {
-		return fmt.Errorf("magick crop right failed: %v", err)
-	}
-
-	return nil
 }
